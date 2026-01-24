@@ -16,3 +16,22 @@ Source (vendor/exchange) → Kafka → Ingestion → Raw Store → Canonical Mod
 
 ## Tech
 Python, SQL, Kafka, Docker
+
+## Quickstart
+
+To set up a virtual environment and run the batch ingestion:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate       # on Windows use .venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+python -m market_data_platform.ingestion.batch_ingest \
+    --symbol BTC-USD \
+    --start 2024-12-01 \
+    --end 2024-12-05
+```
+
+Adjust the date range to one with available market data for the symbol (for example, recent weekday dates for actively traded pairs like BTC-USD).
+
+The ingested Parquet files will appear under `data/raw/symbol=BTC-USD/` in date-partitioned folders (e.g., `date=2024-12-01/part-2024-12-01.parquet`).
