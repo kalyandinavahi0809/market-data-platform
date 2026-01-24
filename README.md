@@ -32,4 +32,6 @@ python -m market_data_platform.ingestion.batch_ingest \
     --end 2025-01-05
 ```
 
+Adjust the date range to one with available market data for the symbol.
+
 The ingested Parquet files will appear under `data/raw/symbol=BTC-USD/` in date-partitioned folders (e.g., `date=2025-01-01/part-2025-01-01.parquet`).

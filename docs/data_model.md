@@ -1,5 +1,7 @@
 # Raw Layer Schema
 
+The raw layer stores market data with the following schema:
+
 | Column          | Type      | Description                        |
 | --------------- | --------- | ---------------------------------- |
 | ts_utc          | timestamp | UTC timestamp of the record        |
