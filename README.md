@@ -28,10 +28,10 @@ pip install -r requirements.txt
 pip install -e .
 python -m market_data_platform.ingestion.batch_ingest \
     --symbol BTC-USD \
-    --start 2025-01-01 \
-    --end 2025-01-05
+    --start 2024-12-01 \
+    --end 2024-12-05
 ```
 
-Adjust the date range to one with available market data for the symbol (for example, recent historical dates for actively traded pairs like BTC-USD).
+Adjust the date range to one with available market data for the symbol (for example, recent weekday dates for actively traded pairs like BTC-USD).
 
-The ingested Parquet files will appear under `data/raw/symbol=BTC-USD/` in date-partitioned folders (e.g., `date=2025-01-01/part-2025-01-01.parquet`).
+The ingested Parquet files will appear under `data/raw/symbol=BTC-USD/` in date-partitioned folders (e.g., `date=2024-12-01/part-2024-12-01.parquet`).
