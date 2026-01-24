@@ -1,6 +1,6 @@
 # Raw Layer Schema
 
-The raw layer stores market data with the following schema:
+The raw layer stores market data with the following schema. Canonical and research-layer schemas will be documented separately.
 
 | Column          | Type      | Description                        |
 | --------------- | --------- | ---------------------------------- |
