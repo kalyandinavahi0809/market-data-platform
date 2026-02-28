@@ -1,0 +1,36 @@
+# config/universe.yaml
+# Defines the trading universe for ingestion and research.
+# All tickers follow yfinance format.
+
+defaults:
+  start_date: "2020-01-01"
+  end_date: null        # null = today at runtime
+  source: yfinance
+
+equities:
+  # US large-cap — diversified across sectors
+  - AAPL    # Technology
+  - MSFT    # Technology
+  - GOOGL   # Communication Services
+  - AMZN   # Consumer Discretionary
+  - META    # Communication Services
+  - NVDA    # Technology (semiconductors)
+  - TSLA    # Consumer Discretionary
+  - JPM     # Financials
+  - BAC     # Financials
+  - V       # Financials
+  - JNJ     # Health Care
+  - UNH     # Health Care
+  - MRK     # Health Care
+  - PFE     # Health Care
+  - XOM     # Energy
+  - CVX     # Energy
+  - PG      # Consumer Staples
+  - HD      # Consumer Discretionary
+  - MA      # Financials
+  - AVGO    # Technology (semiconductors)
+
+crypto:
+  - BTC-USD
+  - ETH-USD
+  - SOL-USD
