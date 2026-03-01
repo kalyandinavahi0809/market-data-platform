@@ -1,4 +1,4 @@
-.PHONY: install lint test ingest-universe canonicalize quality-check features backtest
+.PHONY: install lint test ingest-universe canonicalize quality-check features backtest costs
 
 install:
 	pip install -e .
@@ -57,6 +57,30 @@ df = add_forward_returns(df); \
 returns = run_backtest(df); \
 report = compute_metrics(returns.dropna()); \
 print(report.summary())"
+
+# Run the backtest with default transaction cost models and print net metrics
+costs:
+	python -c "\
+from pathlib import Path; \
+import pandas as pd; \
+from market_data_platform.research.features import compute_features; \
+from market_data_platform.research.cross_section import compute_cross_section; \
+from market_data_platform.research.forward_returns import add_forward_returns; \
+from market_data_platform.backtest.engine import run_with_costs; \
+from market_data_platform.backtest.metrics import compute_net_metrics; \
+from market_data_platform.costs.cost_engine import CostEngine; \
+from market_data_platform.costs.slippage import LinearSlippage; \
+from market_data_platform.costs.commission import BpsCommission; \
+from market_data_platform.costs.spread import ConstantSpread; \
+files = sorted(Path('data/canonical').rglob('*.parquet')); \
+df = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True); \
+df = compute_features(df); \
+df = compute_cross_section(df); \
+df = add_forward_returns(df); \
+engine = CostEngine(LinearSlippage(5.0), BpsCommission(5.0), ConstantSpread(5.0)); \
+cost_report = run_with_costs(df, engine); \
+metrics = compute_net_metrics(cost_report.gross_returns, cost_report); \
+print(metrics.summary())"
 
 # Run data quality checks against the canonical layer
 quality-check:

@@ -12,6 +12,8 @@ max_drawdown        : maximum peak-to-trough drawdown (positive fraction)
 hit_rate            : fraction of days with positive returns
 annualized_return   : geometric annualized return
 turnover            : daily average absolute weight change
+compute_metrics     : aggregate gross metrics into MetricsReport
+compute_net_metrics : aggregate gross + net (cost-adjusted) metrics
 """
 
 from __future__ import annotations
@@ -34,6 +36,13 @@ class MetricsReport:
     max_drawdown: float
     hit_rate: float
     turnover: Optional[float] = None
+    # Phase 3 — cost-adjusted metrics (None when no cost model is applied)
+    net_sharpe_ratio: Optional[float] = None
+    net_annualized_return: Optional[float] = None
+    total_cost_bps: Optional[float] = None
+    avg_cost_per_trade_bps: Optional[float] = None
+    cost_drag_annual_bps: Optional[float] = None
+    breakeven_turnover: Optional[float] = None
 
     def summary(self) -> str:
         lines = [
@@ -46,6 +55,16 @@ class MetricsReport:
         ]
         if self.turnover is not None:
             lines.append(f"  Turnover (daily)  : {self.turnover:.4f}")
+        if self.net_sharpe_ratio is not None:
+            lines.extend(
+                [
+                    f"  Net Sharpe ratio  : {self.net_sharpe_ratio:.3f}",
+                    f"  Net ann. return   : {self.net_annualized_return:+.2%}",
+                    f"  Total cost (bps)  : {self.total_cost_bps:.1f}",
+                    f"  Cost drag (bps/y) : {self.cost_drag_annual_bps:.1f}",
+                    f"  Breakeven t/o     : {self.breakeven_turnover:.2f}",
+                ]
+            )
         return "\n".join(lines)
 
 
@@ -164,6 +183,62 @@ def compute_metrics(
         max_drawdown=max_drawdown(returns),
         hit_rate=hit_rate(returns),
         turnover=turnover(weights_df) if weights_df is not None else None,
+    )
+    logger.info(report.summary())
+    return report
+
+
+def compute_net_metrics(
+    gross_returns: pd.Series,
+    cost_report,  # CostReport (avoid circular import — accept duck-typed)
+    periods: int = 252,
+) -> MetricsReport:
+    """Compute gross and net (cost-adjusted) metrics together.
+
+    Parameters
+    ----------
+    gross_returns:
+        Daily gross portfolio return series.
+    cost_report:
+        A ``CostReport`` instance with ``net_returns``, ``total_cost_bps``,
+        and ``cost_per_trade`` attributes.
+    periods:
+        Trading periods per year.  Default 252.
+
+    Returns
+    -------
+    MetricsReport
+        Gross metrics plus Phase 3 cost fields populated.
+    """
+    net_returns = cost_report.net_returns
+
+    gross_ann = annualized_return(gross_returns, periods)
+    net_ann = annualized_return(net_returns, periods) if net_returns is not None else float("nan")
+    drag_bps = (gross_ann - net_ann) * 10_000
+
+    n_trades = len(cost_report.cost_per_trade)
+    total_cost_bps = cost_report.total_cost_bps
+    avg_cost_per_trade_bps = (total_cost_bps / n_trades) if n_trades > 0 else 0.0
+
+    # Breakeven turnover: number of weight-unit trades per year that would
+    # consume all gross alpha.  Formula: gross_alpha_bps / avg_cost_bps_per_trade.
+    if avg_cost_per_trade_bps > 0:
+        breakeven_to = (gross_ann * 10_000) / avg_cost_per_trade_bps
+    else:
+        breakeven_to = float("inf")
+
+    report = MetricsReport(
+        annualized_return=gross_ann,
+        sharpe_ratio=sharpe_ratio(gross_returns, periods),
+        sortino_ratio=sortino_ratio(gross_returns, periods),
+        max_drawdown=max_drawdown(gross_returns),
+        hit_rate=hit_rate(gross_returns),
+        net_sharpe_ratio=sharpe_ratio(net_returns, periods) if net_returns is not None else float("nan"),
+        net_annualized_return=net_ann,
+        total_cost_bps=total_cost_bps,
+        avg_cost_per_trade_bps=avg_cost_per_trade_bps,
+        cost_drag_annual_bps=drag_bps,
+        breakeven_turnover=breakeven_to,
     )
     logger.info(report.summary())
     return report

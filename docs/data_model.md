@@ -133,6 +133,78 @@ Produced by `backtest/engine.run_backtest()`. A daily `pd.Series` indexed by `ts
 
 ---
 
+## Transaction Cost Models (Phase 3)
+
+Implemented in `costs/`. All models share the interface:
+```python
+apply(trade_size, price, vol, adv) -> float | array
+```
+All inputs accept both scalars and `pandas.Series` / `numpy` arrays.
+
+### Slippage models (`costs/slippage.py`)
+
+| Class | Formula | Default params |
+|---|---|---|
+| `LinearSlippage` | `notional × slippage_bps / 10_000` | `slippage_bps=5` |
+| `VolatilitySlippage` | `notional × k × vol × sqrt(trade/adv)` | `k=0.1` |
+| `SquareRootImpact` | `notional × sigma_coeff × vol × sqrt(trade/adv)` | `sigma_coeff=0.1` |
+
+### Commission models (`costs/commission.py`)
+
+| Class | Formula | Default params |
+|---|---|---|
+| `FixedCommission` | `per_trade` (flat) | `per_trade=1.0` |
+| `BpsCommission` | `notional × bps / 10_000` | `bps=5` |
+| `TieredCommission` | Lowest eligible bps rate | user-defined tiers |
+
+**TieredCommission logic:** for each tier `(threshold, bps_rate)`, apply the lowest rate for which `notional >= threshold`.  Falls back to the highest rate when notional is below all thresholds.
+
+### Spread models (`costs/spread.py`)
+
+| Class | Formula | Default params |
+|---|---|---|
+| `ConstantSpread` | `notional × half_spread_bps / 10_000` | `half_spread_bps=5` |
+| `VolatilitySpread` | `notional × max(min_bps, k × vol × 10_000) / 10_000` | `k=0.5, min_bps=2.0` |
+
+**Half-spread convention:** one transaction pays half the bid-ask spread; the full round-trip cost is `2 × half_spread_bps`.
+
+### CostEngine (`costs/cost_engine.py`)
+
+Wires slippage + commission + spread into a single composable object.
+
+```python
+engine = CostEngine(LinearSlippage(5.0), BpsCommission(5.0), ConstantSpread(5.0))
+report = engine.apply(trades_df, prices_df, gross_returns=gross_series)
+```
+
+**`trades_df` schema:**
+
+| Column | Type | Description |
+|---|---|---|
+| symbol | string | Instrument ticker |
+| date | datetime64[UTC] | Trade date |
+| shares | float | Absolute share quantity |
+| direction | int | +1 (long) or -1 (short) |
+
+**`CostReport` fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `cost_per_trade` | DataFrame | Per-trade breakdown (notional, slippage, commission, spread, total) |
+| `total_cost_dollars` | float | Sum of all per-trade costs |
+| `total_cost_bps` | float | `total_cost / total_notional × 10_000` |
+| `gross_returns` | Series | Input gross returns (pass-through) |
+| `net_returns` | Series | `gross_returns − daily_cost_drag` |
+| `cost_attribution` | dict | `{"slippage": $, "commission": $, "spread": $}` |
+
+**Cost assumptions:**
+- Costs are applied once per trade (one-way, not round-trip)
+- Spread is the half-spread (entry cost only; exit is a separate trade)
+- `adv=0` in impact models → zero impact (safe handling)
+- Missing symbols in `prices_df` → zero cost (graceful degradation)
+
+---
+
 ## DuckDB Views
 
 `DuckDBClient` registers both hive-partitioned stores as SQL views on connect:
