@@ -1,4 +1,4 @@
-.PHONY: install lint test ingest-universe canonicalize quality-check features backtest costs
+.PHONY: install lint test ingest-universe canonicalize quality-check features backtest costs walk-forward
 
 install:
 	pip install -e .
@@ -81,6 +81,25 @@ engine = CostEngine(LinearSlippage(5.0), BpsCommission(5.0), ConstantSpread(5.0)
 cost_report = run_with_costs(df, engine); \
 metrics = compute_net_metrics(cost_report.gross_returns, cost_report); \
 print(metrics.summary())"
+
+# Run walk-forward OOS validation on the canonical layer and print the summary
+walk-forward:
+	python -c "\
+from pathlib import Path; \
+import pandas as pd; \
+from market_data_platform.costs.cost_engine import CostEngine; \
+from market_data_platform.costs.slippage import LinearSlippage; \
+from market_data_platform.costs.commission import BpsCommission; \
+from market_data_platform.costs.spread import ConstantSpread; \
+from market_data_platform.validation.walk_forward import WalkForwardSplitter; \
+from market_data_platform.validation.oos_evaluator import OOSEvaluator; \
+files = sorted(Path('data/canonical').rglob('*.parquet')); \
+df = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True); \
+engine = CostEngine(LinearSlippage(5.0), BpsCommission(5.0), ConstantSpread(5.0)); \
+splitter = WalkForwardSplitter(train_period=504, test_period=63, step_size=63, min_train=252); \
+evaluator = OOSEvaluator(splitter=splitter, cost_engine=engine); \
+report = evaluator.run(df); \
+print(evaluator.summary())"
 
 # Run data quality checks against the canonical layer
 quality-check:

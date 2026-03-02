@@ -205,6 +205,103 @@ report = engine.apply(trades_df, prices_df, gross_returns=gross_series)
 
 ---
 
+## Walk-Forward Validation (Phase 4)
+
+Implemented in `validation/`. Provides rigorous out-of-sample (OOS) strategy evaluation with
+zero information leakage between training and test windows.
+
+### WalkForwardSplitter (`validation/walk_forward.py`)
+
+Generates rolling non-overlapping `(train_df, test_df)` pairs from a panel DataFrame.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `train_period` | 504 | Number of trading days in each training window (≈ 2 years) |
+| `test_period` | 63 | Number of trading days in each test (OOS) window (≈ 1 quarter) |
+| `step_size` | 63 | Trading days to advance between consecutive windows |
+| `min_train` | 252 | Minimum required training days; windows below this are skipped |
+
+**Leakage guarantee:** `test_df["ts_utc"].min() > train_df["ts_utc"].max()` for every window.
+The test window starts strictly the next trading day after the training window ends.
+
+**Input requirements:** `df` must have `ts_utc` as a column **or** a `DatetimeIndex` named `ts_utc`.
+Multiple rows per date (one per symbol) are supported.
+
+### OOSEvaluator (`validation/oos_evaluator.py`)
+
+Runs the full research → backtest pipeline on each walk-forward window and stitches a continuous
+OOS return series.
+
+**Per-window evaluation steps:**
+1. Compute features → cross-section → forward returns → backtest on **training** data (IS metrics).
+2. Prepend the last **20 training days** to the test window before computing OOS features.
+   This prevents NaN at the test window start (vol_20d, log_return_20d require history)
+   without leaking any test-period information into feature values.
+3. Extract only test-period rows from the feature-enriched DataFrame.
+4. Run the backtest (and optionally the cost engine) on test-only rows (OOS metrics).
+
+**Feature lookback design decision:** `_FEATURE_LOOKBACK = 20` equals the longest rolling
+window used by `compute_features` (20-day vol, 20-day momentum). Using lookback training data
+for feature warm-up is **not** lookahead bias — no test-period prices enter the computation.
+
+#### WindowResult fields
+
+| Field | Type | Description |
+|---|---|---|
+| `window_idx` | int | Zero-based window index |
+| `train_start` / `train_end` | Timestamp | First and last training dates |
+| `test_start` / `test_end` | Timestamp | First and last test (OOS) dates |
+| `is_sharpe` | float | Annualized Sharpe on training data |
+| `oos_sharpe` | float | Annualized Sharpe on test data (gross) |
+| `oos_return` | float | Geometric annualized return on test data |
+| `oos_max_drawdown` | float | Maximum drawdown on test data |
+| `oos_hit_rate` | float | Fraction of positive test-period days |
+| `oos_net_sharpe` | float | OOS Sharpe after costs (`nan` if no cost engine) |
+| `n_train_days` / `n_test_days` | int | Window size in trading days |
+
+#### OOSReport aggregate fields
+
+| Field | Description |
+|---|---|
+| `n_windows` | Total number of walk-forward windows |
+| `oos_sharpe` | Sharpe on the **stitched** OOS return series |
+| `oos_sortino` | Sortino on the stitched series |
+| `oos_max_drawdown` | Max drawdown on the stitched series |
+| `oos_hit_rate` | Hit rate on the stitched series |
+| `oos_annualized_return` | Geometric annualized return on the stitched series |
+| `oos_net_sharpe` | OOS Sharpe after costs (`nan` if no engine) |
+| `is_sharpe` | Average in-sample Sharpe across all windows |
+| `sharpe_degradation_pct` | `(IS − OOS) / \|IS\| × 100`; positive = OOS worse than IS |
+| `window_results` | Tuple of per-window `WindowResult` objects |
+| `oos_returns` | Stitched daily OOS portfolio return `pd.Series` |
+
+### VolatilityRegimeFilter (`validation/regime_filter.py`)
+
+Classifies each trading day into one of three volatility regimes for conditional performance analysis.
+
+**Regimes:**
+
+| Label | Description |
+|---|---|
+| `LOW_VOL` | Rolling 20-day vol ≤ low_percentile threshold |
+| `NORMAL_VOL` | Between thresholds (default label for NaN vol at series start) |
+| `HIGH_VOL` | Rolling 20-day vol > high_percentile threshold |
+
+**Vol computation:** equal-weight portfolio daily return → `rolling(20, min_periods=2).std() × √252`.
+
+**Point-in-time safety:** thresholds are estimated with `fit(train_returns_df)` on training data
+only.  Call `label(test_returns_df)` with held-out data to avoid distributional leakage.
+
+```python
+filt = VolatilityRegimeFilter(low_percentile=20, high_percentile=80)
+filt.fit(train_returns_df)          # estimate percentile thresholds on train
+labels = filt.label(oos_returns_df) # classify test dates using fixed thresholds
+sharpes = filt.regime_sharpes(oos_portfolio_returns, labels)
+# → {'LOW_VOL': 1.2, 'NORMAL_VOL': 0.7, 'HIGH_VOL': -0.3}
+```
+
+---
+
 ## DuckDB Views
 
 `DuckDBClient` registers both hive-partitioned stores as SQL views on connect:
